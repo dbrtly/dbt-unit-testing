@@ -1,0 +1,1 @@
+select my_array from {{ ref("bigquery_array_stub") }}

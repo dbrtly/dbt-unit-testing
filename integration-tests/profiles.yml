@@ -1,0 +1,8 @@
+integration_tests:
+  target: default
+  outputs:
+    default:
+      type: bigquery
+      method: oauth
+      dataset: dbt_unit_testing
+      threads: 36
