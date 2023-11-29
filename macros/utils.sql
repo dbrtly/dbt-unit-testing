@@ -34,7 +34,11 @@
         {% endif %}
         {% do result.append(modified_column) %}
     {% endfor %}
-    {{ return(result | join(", ")) }}
+    {{ return(result | join(",\n    ")) }}
+{% endmacro %}
+
+{% macro join_columns(result, delimiter=",\n    ") %}
+  {{ return(result | join(delimiter)) }}
 {% endmacro %}
 
 {% macro sql_encode(s) %}
@@ -80,10 +84,10 @@
 {% endmacro %}
 
 {% macro model_node (node) %}
-  {% set graph_nodes = graph.nodes.values() | 
-    selectattr('resource_type', 'in', ['model', 'snapshot', 'seed']) | 
-    selectattr('package_name', 'equalto', node.package_name) | 
-    selectattr('name', 'equalto', node.name) | 
+  {% set graph_nodes = graph.nodes.values() |
+    selectattr('resource_type', 'in', ['model', 'snapshot', 'seed']) |
+    selectattr('package_name', 'equalto', node.package_name) |
+    selectattr('name', 'equalto', node.name) |
     list %}
   {% if graph_nodes | length > 0 %}
     {% if dbt_unit_testing.has_value(node.version) %}

@@ -78,58 +78,69 @@
   {% set expectations = test_configuration.expectations %}
   {% set model_node = dbt_unit_testing.model_node(test_configuration.model_node) %}
   {%- set model_complete_sql = dbt_unit_testing.build_model_complete_sql(model_node, test_configuration.mocks, test_configuration.options) -%}
-  {% set columns = dbt_unit_testing.quote_and_join_columns(dbt_unit_testing.extract_columns_list(expectations.input_values)) %}
+
+  {% set all_columns = dbt_unit_testing.extract_columns_list(expectations.input_values) %}
   {% set convert_columns = test_configuration.options.convert_columns | default("convert_columns") %}
-  {% set select_columns = dbt_unit_testing.quote_and_join_columns(dbt_unit_testing.extract_columns_list(expectations.input_values), convert_columns) %}
+  {% set selected_columns = dbt_unit_testing.quote_and_join_columns(all_columns, convert_columns) %}
+  {% set grouped_columns = dbt_unit_testing.quote_and_join_columns(all_columns) %}
 
   {% set diff_column = test_configuration.options.diff_column | default("diff") %}
   {% set count_column = test_configuration.options.count_column | default("count") %}
   {% set udf_definitions = test_configuration.options.udf_definitions | default("udf_definitions") %}
 
-  {%- set actual_query -%}
-    select count(1) as {{ count_column }}, {{ select_columns }}
-    from ( {{ model_complete_sql }} ) as s
-    group by {{ columns }}
+  {%- set actual_cte -%}
+actual as (
+    with
+    model_complete_sql as (
+        {{ model_complete_sql }}
+    )
+    select
+        count(1) as {{ count_column }},
+        {{ selected_columns }}
+    from model_complete_sql
+    group by {{ grouped_columns }}
+)
   {% endset %}
 
-  {%- set expectations_query -%}
-    select count(1) as {{ count_column }}, {{ select_columns }}
-    from ({{ expectations.input_values }}) as s
-    group by {{ columns }}
+  {%- set expectations_cte -%}
+expectations as (
+    with
+    expected as (
+    {{ expectations.input_values }}
+    )
+    select
+        count(1) as {{ count_column }},
+        {{ selected_columns }}
+    from expected
+    group by {{ grouped_columns }}
+)
   {% endset %}
 
   {%- set test_query -%}
     {{ udf_definitions }}
 
 with
-expectations as (
-{{ expectations_query }}
-),
+{{ expectations_cte }},
 
-
-actual as (
-/***********************************************/
-{{- actual_query -}}
-/***********************************************/
-),
+{{ actual_cte }},
 
 extra_entries as (
   select
     '+' as {{ diff_column }}, {{ count_column }},
-    {{ columns }}
+    {{ grouped_columns }}
   from actual {{- except() -}}
   select
     '+' as {{ diff_column }}, {{ count_column }},
-    {{ columns }}
+    {{ grouped_columns }}
   from expectations
 ),
 
 missing_entries as (
   select '-' as {{ diff_column }}, {{ count_column }},
-    {{ columns }}
+    {{ grouped_columns }}
   from expectations {{- except() }}
   select '-' as {{ diff_column }}, {{ count_column }},
-    {{ columns }}
+    {{ grouped_columns }}
   from actual
 ),
 
@@ -148,8 +159,8 @@ order by {{ sort_field }}
 
   {% set test_queries = {
     "model_query": model_complete_sql,
-    "actual_query": actual_query,
-    "expectations_query": expectations_query,
+    "actual_query": actual_cte,
+    "expectations_query": expectations_cte,
     "test_query": test_query
   } %}
 
@@ -180,18 +191,23 @@ order by {{ sort_field }}
   {% set udf_definitions = test_configuration.options.udf_definitions | default("udf_definitions") %}
 
   {%- set count_query -%}
-    {{ udf_definitions }}
+    {{- udf_definitions }}
 
-    with
-    exp_count as (
-    select count(1) as expectation_count from ( {{ expectations_query }} )
-    ),
+with
+{{ expectations_query -}},
 
-    act_count as (
-    select count(1) as actual_count from ( {{ actual_query }} )
-    )
+{{ actual_query -}},
 
-    select expectation_count, actual_count, from exp_count cross join act_count
+exp_count as (
+    select count(1) as expectation_count from expectations
+),
+
+act_count as (
+    select count(1) as actual_count from actual
+)
+
+select expectation_count, actual_count,
+from exp_count cross join act_count
   {%- endset -%}
   {% set r1 = dbt_unit_testing.run_query(count_query) %}
   {% set expectations_row_count = r1.columns[0].values() | first %}

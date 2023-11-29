@@ -1,7 +1,7 @@
 integration_tests:
-  target: default
+  target: bigquery
   outputs:
-    default:
+    bigquery:
       type: bigquery
       method: oauth
       dataset: dbt_unit_testing
